@@ -8,6 +8,7 @@ class RSACipher(BaseAsymmetricCipher):
         super().__init__()
         self.name = "RSA"
         self.description = "Rivest-Shamir-Adleman (RSA) public-key cryptosystem"
+        self.hash_alg = 'SHA-256'  # Default hash algorithm for signatures
     
     def encrypt(self, plaintext: str, **kwargs) -> str:
         if not self.validate_parameters(**kwargs):
@@ -60,4 +61,49 @@ class RSACipher(BaseAsymmetricCipher):
         return {
             'public_key': self._encode_key(key.publickey()),
             'private_key': self._encode_key(key)
-        } 
+        }
+    
+    def sign(self, message: str, **kwargs) -> str:
+        """Sign a message using RSA private key"""
+        if not self.validate_parameters(private_key=True, **kwargs):
+            raise ValueError("Invalid parameters")
+        
+        # Get private key
+        private_key = self._decode_key(kwargs['private_key'], 'RSA')
+        
+        # Hash the message
+        from Crypto.Hash import SHA256
+        hash_obj = SHA256.new(message.encode('utf-8'))
+        
+        # Create PKCS1_PSS signature
+        from Crypto.Signature import pkcs1_15
+        signer = pkcs1_15.new(private_key)
+        signature = signer.sign(hash_obj)
+        
+        # Return base64 encoded signature
+        return base64.b64encode(signature).decode('utf-8')
+    
+    def verify(self, message: str, signature: str, **kwargs) -> bool:
+        """Verify an RSA signature using public key"""
+        if not self.validate_parameters(public_key=True, **kwargs):
+            raise ValueError("Invalid parameters")
+        
+        try:
+            # Get public key
+            public_key = self._decode_key(kwargs['public_key'], 'RSA')
+            
+            # Decode signature
+            signature_bytes = base64.b64decode(signature)
+            
+            # Hash the message
+            from Crypto.Hash import SHA256
+            hash_obj = SHA256.new(message.encode('utf-8'))
+            
+            # Verify PKCS1_PSS signature
+            from Crypto.Signature import pkcs1_15
+            verifier = pkcs1_15.new(public_key)
+            verifier.verify(hash_obj, signature_bytes)
+            return True
+            
+        except (ValueError, TypeError):
+            return False

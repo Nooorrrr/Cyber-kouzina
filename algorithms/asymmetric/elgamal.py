@@ -3,12 +3,14 @@ from Crypto.PublicKey import ECC
 from Crypto.Util.number import getPrime, inverse
 import random
 import base64
+import math
 
 class ElGamalCipher(BaseAsymmetricCipher):
     def __init__(self):
         super().__init__()
         self.name = "ElGamal"
         self.description = "ElGamal encryption system"
+        self.hash_alg = 'SHA-256'  # Default hash algorithm for signatures
     
     def encrypt(self, plaintext: str, **kwargs) -> str:
         if not self.validate_parameters(**kwargs):
@@ -100,4 +102,68 @@ class ElGamalCipher(BaseAsymmetricCipher):
             'g': str(g),
             'public_key': str(y),
             'private_key': str(x)
-        } 
+        }
+    
+    def sign(self, message: str, **kwargs) -> str:
+        """Sign a message using ElGamal private key"""
+        if not self.validate_parameters(**kwargs):
+            raise ValueError("Invalid parameters")
+        
+        # Get parameters
+        p = int(kwargs['p'])
+        g = int(kwargs['g'])
+        x = int(kwargs['private_key'])  # Private key
+        
+        # Hash the message
+        from Crypto.Hash import SHA256
+        hash_obj = SHA256.new(message.encode('utf-8'))
+        m = int.from_bytes(hash_obj.digest(), 'big')
+        
+        # Generate random k (must be coprime with p-1)
+        from Crypto.Util.number import inverse
+        while True:
+            k = random.randint(2, p-2)
+            if math.gcd(k, p-1) == 1:
+                break
+        
+        # Calculate signature
+        r = pow(g, k, p)
+        k_inv = inverse(k, p-1)
+        s = (k_inv * (m - x * r)) % (p-1)
+        
+        # Encode signature
+        sig = f"{r}:{s}"
+        return base64.b64encode(sig.encode('utf-8')).decode('utf-8')
+    
+    def verify(self, message: str, signature: str, **kwargs) -> bool:
+        """Verify an ElGamal signature using public key"""
+        try:
+            if not self.validate_parameters(**kwargs):
+                raise ValueError("Invalid parameters")
+            
+            # Get parameters
+            p = int(kwargs['p'])
+            g = int(kwargs['g'])
+            y = int(kwargs['public_key'])  # Public key
+            
+            # Decode signature
+            sig = base64.b64decode(signature).decode('utf-8')
+            r, s = map(int, sig.split(':'))
+            
+            # Verify r is in range
+            if not (1 <= r <= p-1):
+                return False
+            
+            # Hash the message
+            from Crypto.Hash import SHA256
+            hash_obj = SHA256.new(message.encode('utf-8'))
+            m = int.from_bytes(hash_obj.digest(), 'big')
+            
+            # Verify signature
+            v1 = pow(g, m, p)
+            v2 = (pow(y, r, p) * pow(r, s, p)) % p
+            
+            return v1 == v2
+            
+        except (ValueError, TypeError):
+            return False
